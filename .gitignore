@@ -1,0 +1,6 @@
+*.pyc
+event*
+*.meta
+*checkpoint*
+model_*
+./data

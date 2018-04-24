@@ -3,6 +3,6 @@ event*
 *.meta
 *checkpoint*
 model_*
-./data
+./data/*
 *.jpg
 *.png

@@ -4,3 +4,5 @@ event*
 *checkpoint*
 model_*
 ./data
+*.jpg
+*.png

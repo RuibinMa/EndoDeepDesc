@@ -32,7 +32,7 @@ from tensorboard_logger import configure, log_value
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch TFeat Example')
 # Model options
-parser.add_argument('--dataroot', type=str, default='/tmp/phototour_dataset',
+parser.add_argument('--dataroot', type=str, default='/home/ruibinma/UBC_Phototour_Dataset',
                     help='path to dataset')
 parser.add_argument('--log-dir', default='./logs',
                     help='folder to output model checkpoints')
@@ -61,7 +61,7 @@ parser.add_argument('--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('--optimizer', default='sgd', type=str,
                     metavar='OPT', help='The optimizer to use (default: SGD)')
-parser.add_argument('--anchorswap', type=bool, default=False,
+parser.add_argument('--anchorswap', type=bool, default=True,
                     help='turns on anchor swap')
 # Device options
 parser.add_argument('--no-cuda', action='store_true', default=False,

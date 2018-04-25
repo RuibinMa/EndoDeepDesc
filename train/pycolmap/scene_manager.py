@@ -20,16 +20,17 @@ from rotation import Quaternion
 INVALID_POINT3D = np.uint64(-1)
 
 class SceneManager:
-    def __init__(self, colmap_results_folder):
+    def __init__(self, colmap_results_folder, image_path=None):
         self.folder = colmap_results_folder
         if not self.folder.endswith('/'):
             self.folder += '/'
 
         self.image_path = None
-        self.load_colmap_project_file()
+        self.load_colmap_project_file(image_path=image_path)
 
         self.cameras = dict()
         self.images = dict()
+        self.name_to_image_id = dict()
 
         # Nx3 array of point3D xyz's
         self.points3D = np.zeros((0, 3))
@@ -48,25 +49,33 @@ class SceneManager:
 
     #---------------------------------------------------------------------------
 
-    def load_colmap_project_file(self, project_file=None):
+    def load_colmap_project_file(self, project_file=None, image_path=None):
         if project_file is None:
             project_file = self.folder + 'project.ini'
 
-        self.image_path = None
+        self.image_path = image_path
 
-        try:
-            with open(project_file, 'r') as f:
-                for line in iter(f.readline, ''):
-                    if line.startswith('image_path'):
-                        self.image_path = line[11:].strip()
-                        break
-        except:
-            pass
+        if self.image_path is None:
+            try:
+                with open(project_file, 'r') as f:
+                    for line in iter(f.readline, ''):
+                        if line.startswith('image_path'):
+                            self.image_path = line[11:].strip()
+                            break
+            except:
+                pass
 
         if self.image_path is None:
             print 'Warning: image_path not found for reconstruction'
         elif not self.image_path.endswith('/'):
             self.image_path += '/'
+
+    #---------------------------------------------------------------------------
+
+    def load(self):
+        self.load_cameras()
+        self.load_images()
+        self.load_points3D()
 
     #---------------------------------------------------------------------------
 
@@ -139,16 +148,18 @@ class SceneManager:
 
                 image.points2D = np.empty((num_points2D, 2))
                 image.point3D_ids = np.empty(num_points2D, dtype=np.uint64)
-                for j in xrange(num_points2D):
-                    image.points2D[j] = struct.unpack('dd', f.read(16))
-                    image.point3D_ids[j] = struct.unpack('L', f.read(8))[0]
+                tmp = np.fromfile(f, dtype=[('x', '(2,)f8'), ('id', 'u8')],
+                                  count=num_points2D)
+                image.points2D = tmp["x"]
+                image.point3D_ids = tmp["id"]
 
                 # automatically remove points without an associated 3D point
-                mask = (image.point3D_ids != INVALID_POINT3D)
-                image.points2D = image.points2D[mask]
-                image.point3D_ids = image.point3D_ids[mask]
+                #mask = (image.point3D_ids != INVALID_POINT3D)
+                #image.points2D = image.points2D[mask]
+                #image.point3D_ids = image.point3D_ids[mask]
 
                 self.images[image_id] = image
+                self.name_to_image_id[image.name] = image_id
 
     def _load_images_txt(self, input_file):
         self.images = dict()
@@ -171,7 +182,7 @@ class SceneManager:
                                   np.array(map(float, data[5:8])))
                 else:
                     image.points2D = np.array(
-                      [map(float, data[::3]), map(float, data[1::3])]).T
+                        [map(float, data[::3]), map(float, data[1::3])]).T
                     image.point3D_ids = np.array(map(np.uint64, data[2::3]))
 
                     # automatically remove points without an associated 3D point
@@ -180,6 +191,7 @@ class SceneManager:
                     #image.point3D_ids = image.point3D_ids[mask]
 
                     self.images[image_id] = image
+                    self.name_to_image_id[image.name] = image_id
 
     #---------------------------------------------------------------------------
 
@@ -219,7 +231,7 @@ class SceneManager:
                 data = struct.unpack(
                     'I' * (2 * track_len), f.read(2 * track_len * 4))
                 self.point3D_id_to_images[self.point3D_ids[i]] = \
-                    np.array(data).reshape(track_len, 2)
+                    np.array(data, dtype=np.uint32).reshape(track_len, 2)
 
     def _load_points3D_txt(self, input_file):
         self.points3D = []
@@ -254,6 +266,13 @@ class SceneManager:
 
     #---------------------------------------------------------------------------
 
+    def save(self, output_folder, binary=True):
+        self.save_cameras(output_folder, binary=binary)
+        self.save_images(output_folder, binary=binary)
+        self.save_points3D(output_folder, binary=binary)
+
+    #---------------------------------------------------------------------------
+
     def save_cameras(self, output_folder, output_file=None, binary=True):
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
@@ -269,20 +288,16 @@ class SceneManager:
             self._save_cameras_txt(output_file)
     
     def _save_cameras_bin(self, output_file):
-        buf = StringIO()
-        buf.write(struct.pack('L', len(self.cameras)))
-
-        camera_struct = struct.Struct('IiLL')
-
-        for camera_id, camera in sorted(self.cameras.iteritems()):
-            buf.write(camera_struct.pack(
-                camera_id, camera.camera_type, camera.width, camera.height))
-            # TODO (True): should move this into the Camera class
-            buf.write(camera.get_params().tobytes())
-
-        buf.seek(0)
         with open(output_file, 'wb') as fid:
-            fid.write(buf.read())
+            fid.write(struct.pack('L', len(self.cameras)))
+
+            camera_struct = struct.Struct('IiLL')
+
+            for camera_id, camera in sorted(self.cameras.iteritems()):
+                fid.write(camera_struct.pack(
+                    camera_id, camera.camera_type, camera.width, camera.height))
+                # TODO (True): should move this into the Camera class
+                fid.write(camera.get_params().tobytes())
 
     def _save_cameras_txt(self, output_file):
         with open(output_file, 'w') as fid:
@@ -310,23 +325,19 @@ class SceneManager:
             self._save_images_txt(output_file)
 
     def _save_images_bin(self, output_file):
-        buf = StringIO()
-        buf.write(struct.pack('L', len(self.images)))
-
-        for image_id, image in self.images.iteritems():
-            buf.write(struct.pack('I', image_id))
-            buf.write(image.q.q.tobytes())
-            buf.write(image.tvec.tobytes())
-            buf.write(struct.pack('I', image.camera_id))
-            buf.write(image.name + '\0')
-            buf.write(struct.pack('L', len(image.points2D)))
-            data = np.rec.fromarrays(
-                (image.points2D[:,0], image.points2D[:,1], image.point3D_ids))
-            buf.write(data.tobytes())
-
-        buf.seek(0)
         with open(output_file, 'wb') as fid:
-            fid.write(buf.read())
+            fid.write(struct.pack('L', len(self.images)))
+
+            for image_id, image in self.images.iteritems():
+                fid.write(struct.pack('I', image_id))
+                fid.write(image.q.q.tobytes())
+                fid.write(image.tvec.tobytes())
+                fid.write(struct.pack('I', image.camera_id))
+                fid.write(image.name + '\0')
+                fid.write(struct.pack('L', len(image.points2D)))
+                data = np.rec.fromarrays(
+                    (image.points2D[:,0], image.points2D[:,1], image.point3D_ids))
+                fid.write(data.tobytes())
 
     def _save_images_txt(self, output_file):
         with open(output_file, 'w') as fid:
@@ -345,8 +356,9 @@ class SceneManager:
                 data = np.rec.fromarrays(
                     (image.points2D[:,0], image.points2D[:,1],
                      image.point3D_ids.astype(np.int64)))
-                np.savetxt(fid, data, '%.2f %.2f %d', newline=' ')
-                fid.seek(-1, os.SEEK_CUR)
+                if len(data) > 0:
+                    np.savetxt(fid, data, '%.2f %.2f %d', newline=' ')
+                    fid.seek(-1, os.SEEK_CUR)
                 fid.write('\n')
 
     #---------------------------------------------------------------------------
@@ -366,36 +378,31 @@ class SceneManager:
             self._save_points3D_txt(output_file)
 
     def _save_points3D_bin(self, output_file):
-        buf = StringIO()
+        num_valid_points3D = sum(
+            1 for point3D_idx in self.point3D_id_to_point3D_idx.itervalues()
+            if point3D_idx != INVALID_POINT3D)
 
         iter_point3D_id_to_point3D_idx = \
             self.point3D_id_to_point3D_idx.iteritems()
 
-        num_valid_points3D = 0
-
-        for point3D_id, point3D_idx in iter_point3D_id_to_point3D_idx:
-            if point3D_idx == INVALID_POINT3D:
-                continue
-
-            num_valid_points3D += 1
-
-            buf.write(struct.pack('L', point3D_id))
-            buf.write(self.points3D[point3D_idx].tobytes())
-            buf.write(self.point3D_colors[point3D_idx].tobytes())
-            buf.write(self.point3D_errors[point3D_idx].tobytes())
-            buf.write(
-                struct.pack('L', len(self.point3D_id_to_images[point3D_id])))
-            buf.write(self.point3D_id_to_images[point3D_id].tobytes())
-
-        buf.seek(0)
         with open(output_file, 'wb') as fid:
             fid.write(struct.pack('L', num_valid_points3D))
-            fid.write(buf.read())
+
+            for point3D_id, point3D_idx in iter_point3D_id_to_point3D_idx:
+                if point3D_idx == INVALID_POINT3D:
+                    continue
+
+                fid.write(struct.pack('L', point3D_id))
+                fid.write(self.points3D[point3D_idx].tobytes())
+                fid.write(self.point3D_colors[point3D_idx].tobytes())
+                fid.write(self.point3D_errors[point3D_idx].tobytes())
+                fid.write(
+                    struct.pack('L', len(self.point3D_id_to_images[point3D_id])))
+                fid.write(self.point3D_id_to_images[point3D_id].tobytes())
 
     def _save_points3D_txt(self, output_file):
         num_valid_points3D = sum(
-            1 for point3D_idx in
-            self.point3D_id_to_point3D_idx.itervalues()
+            1 for point3D_idx in self.point3D_id_to_point3D_idx.itervalues()
             if point3D_idx != INVALID_POINT3D)
 
         array_to_string = lambda arr: ' '.join(str(x) for x in arr)
@@ -425,9 +432,8 @@ class SceneManager:
 
     # return the image id associated with a given image file
     def get_image_from_name(self, image_name):
-        for image_id, image in self.images.iteritems():
-            if image.name == image_name:
-                return image_id, image
+        image_id = self.name_to_image_id[image_name]
+        return image_id, self.images[image_id]
 
     #---------------------------------------------------------------------------
 
@@ -455,6 +461,11 @@ class SceneManager:
             result += [self.point3D_colors[point3D_idxs,:]]
 
         return result if len(result) > 1 else result[0]
+
+    #---------------------------------------------------------------------------
+
+    def point3D_valid(self, point3D_id):
+        return (self.point3D_id_to_point3D_idx[point3D_id] != INVALID_POINT3D)
 
     #---------------------------------------------------------------------------
 
@@ -517,12 +528,41 @@ class SceneManager:
 
     #---------------------------------------------------------------------------
 
+    def delete_images(self, image_list):
+        # delete specified images
+        for image_id in image_list:
+            if image_id in self.images:
+                del self.images[image_id]
+
+        keep_set = set(self.images.iterkeys())
+
+        # delete references to specified images, and ignore any points that are
+        # invalidated
+        iter_point3D_id_to_point3D_idx = \
+            self.point3D_id_to_point3D_idx.iteritems()
+
+        for point3D_id, point3D_idx in iter_point3D_id_to_point3D_idx:
+            if point3D_idx == INVALID_POINT3D:
+                continue
+
+            mask = np.array([
+                image_id in keep_set
+                for image_id in self.point3D_id_to_images[point3D_id][:,0]])
+            if np.any(mask):
+                self.point3D_id_to_images[point3D_id] = \
+                    self.point3D_id_to_images[point3D_id][mask]
+            else:
+                self.point3D_id_to_point3D_idx[point3D_id] = INVALID_POINT3D
+
+    #---------------------------------------------------------------------------
+
     # camera_list: set of cameras whose points we'd like to keep
+    # min/max triangulation angle: in degrees
     def filter_points3D(self,
             min_track_len=0, max_error=np.inf, min_tri_angle=0,
-            max_tri_angle=180, image_list=set()):
+            max_tri_angle=180, image_set=set()):
 
-        image_list = set(image_list)
+        image_set = set(image_set)
 
         check_triangulation_angles = (min_tri_angle > 0 or max_tri_angle < 180)
         if check_triangulation_angles:
@@ -532,17 +572,20 @@ class SceneManager:
         iter_point3D_id_to_point3D_idx = \
             self.point3D_id_to_point3D_idx.iteritems()
 
+        image_ids = []
+
         for point3D_id, point3D_idx in iter_point3D_id_to_point3D_idx:
             if point3D_idx == INVALID_POINT3D:
                 continue
 
-            image_ids = set(self.point3D_id_to_images[point3D_id][:,0])
+            if image_set or min_track_len > 0:
+                image_ids = set(self.point3D_id_to_images[point3D_id][:,0])
             
             # check if error and min track length are sufficient, or if none of
             # the selected cameras see the point
             if (len(image_ids) < min_track_len or
                       self.point3D_errors[point3D_idx] > max_error or
-                      image_list and image_list.isdisjoint(image_ids)):
+                      image_set and image_set.isdisjoint(image_ids)):
                 self.point3D_id_to_point3D_idx[point3D_id] = INVALID_POINT3D
 
             # find dot product between all camera viewing rays
@@ -561,3 +604,26 @@ class SceneManager:
                 if (np.min(cos_theta) > max_tri_prod or
                     np.max(cos_theta) < min_tri_prod):
                     self.point3D_id_to_point3D_idx[point3D_id] = INVALID_POINT3D
+
+        # apply the filters to the image point3D_ids
+        for image in self.images.itervalues():
+            mask = np.array([
+                self.point3D_id_to_point3D_idx.get(point3D_id, 0) \
+                    == INVALID_POINT3D
+                for point3D_id in image.point3D_ids])
+            image.point3D_ids[mask] = INVALID_POINT3D
+
+    #-------------------------------------------------------------------------------
+
+    # scene graph: {image_id: [image_id: #shared points]}
+    def build_scene_graph(self):
+        self.scene_graph = defaultdict(lambda: defaultdict(int))
+        point3D_iter = self.point3D_id_to_images.iteritems()
+
+        for i, (point3D_id, images) in enumerate(point3D_iter):
+            if not self.point3D_valid(point3D_id):
+                continue
+
+            for image_id1, image_id2 in combinations(images[:,0], 2):
+                self.scene_graph[image_id1][image_id2] += 1
+                self.scene_graph[image_id2][image_id1] += 1

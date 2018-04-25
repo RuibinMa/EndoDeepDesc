@@ -15,8 +15,8 @@ class Image:
         self.q = q_
         self.tvec = tvec_
 
-        self.points2D = np.array([], dtype=np.float64) # initally empty
-        self.point3D_ids = np.array([], dtype=np.uint64) # initally empty
+        self.points2D = np.empty((0, 2), dtype=np.float64)
+        self.point3D_ids = np.empty((0,), dtype=np.uint64)
 
     #---------------------------------------------------------------------------
 
@@ -27,3 +27,9 @@ class Image:
 
     def C(self):
         return -self.R().T.dot(self.tvec)
+
+    #---------------------------------------------------------------------------
+
+    @property
+    def t(self):
+        return self.tvec

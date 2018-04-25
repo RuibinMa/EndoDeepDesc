@@ -107,6 +107,7 @@ class Quaternion:
   
     def __iadd__(self, other):
         self.q += other.q
+        return self
   
     # conjugation via the ~ operator
     def __invert__(self):
@@ -254,6 +255,7 @@ class DualQuaternion:
     def __iadd__(self, other):
         self.q0 += other.q0
         self.qe += other.qe
+        return self
   
     # conguation via the ~ operator
     def __invert__(self):
@@ -277,6 +279,7 @@ class DualQuaternion:
     def __imul__(self, other):
         tmp = self * other
         self.q0, self.qe = tmp.q0, tmp.qe
+        return self
   
     def __neg__(self):
         return DualQuaternion(-self.q0, -self.qe)
@@ -287,6 +290,7 @@ class DualQuaternion:
     def __isub__(self, other):
         self.q0 -= other.q0
         self.qe -= other.qe
+        return self
   
     # q^-1 = q* / ||q||^2
     # assume that q0 is nonzero!

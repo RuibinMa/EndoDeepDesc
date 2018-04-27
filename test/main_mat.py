@@ -10,14 +10,15 @@
 
 from __future__ import print_function
 import os
-import sys
 import cv2
 import numpy as np
 import torch
 import torch.nn as nn
 import argparse
-from scipy.io import loadmat
+import matlab.engine
 from torch.autograd import Variable
+from shutil import rmtree
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -79,18 +80,49 @@ def extract_tfeats(net,patches):
 
 
 def main():
-    args = parse_args()
-    resume = args.checkpoint
-    print('patchesfile: %s'%args.patchesfile)
-    print('image_name : %s'%args.image_name)
-    print('output_path: %s'%args.output_path)
+    
+    
+#     args = parse_args()
+#     resume = args.checkpoint
+    resume = 'testmodel.pth'
+#     print('patchesfile: %s'%args.patchesfile)
+#     print('image_name : %s'%args.image_name)
+#     print('output_path: %s'%args.output_path)
     print('checkpoint : %s'%resume)
+    
+    data_folder = '/home/ruibinma/local-feature-evaluation/data'
+    image_folder = os.path.join(data_folder, 'images')
+    keypoints_folder = os.path.join(data_folder, 'keypoints')
+    sfm_folder = os.path.join(data_folder, 'sfm_results')
+    descriptor_folder = os.path.join(data_folder, 'descriptors')
+    database_path = os.path.join(data_folder, 'database.db')
+    
+#     if os.path.exists(keypoints_folder):
+#         rmtree(keypoints_folder)
+#     os.mkdir(keypoints_folder)
+    
+    if os.path.exists(descriptor_folder):
+        rmtree(descriptor_folder)
+    os.mkdir(descriptor_folder)
+    
+    image_names = os.listdir(image_folder)
+    image_names.sort()
+    keypoint_paths = []
+    descriptor_paths = []
+    image_paths = []
+    n_images = len(image_names)
+    for image_name in image_names:
+        image_paths.append(os.path.join(image_folder, image_name))
+        keypoint_paths.append(os.path.join(keypoints_folder, image_name + '.bin'))
+        descriptor_paths.append(os.path.join(descriptor_folder, image_name + '.bin'))
+    
+    # start matlab engine
+    eng = matlab.engine.start_matlab()
+    eng.bootstrap(nargout=0)
+    
     # instantiate model and initialize weights
     model = TNet()
     model.cuda()
-
-    #optimizer = create_optimizer(model, args.lr)
-
     # resume from a checkpoint
     if os.path.isfile(resume):
         print('=> loading checkpoint {}'.format(resume))
@@ -100,24 +132,24 @@ def main():
         model.load_state_dict(checkpoint['state_dict'])
     else:
         print('=> no checkpoint found at {}'.format(resume))
-
-    raw_patches = loadmat(args.patchesfile)['patches']
-
-    n_patches = raw_patches.shape[0]
-    patches = np.zeros((n_patches,1,TFEAT_PATCH_SIZE, TFEAT_PATCH_SIZE))
-    for i in range(n_patches):
-        patches[i,0,:,:] = preprocess_patch(raw_patches[i, :, :]) 
-
     model.eval()
-    descriptors = extract_tfeats(model, patches)
-
-    print(descriptors.shape)
     
-    # write descriptor to .bin
-    desc_file_name = args.output_path
-    with open(desc_file_name, 'wb') as file:
-        np.asarray(descriptors.shape, dtype=np.int32).tofile(file)
-        descriptors.astype(np.float32).tofile(file)
+    for i in range(n_images):
+        patches = eng.extract(image_paths[i], keypoint_paths[i], 32)
+        patches = np.array(patches._data).reshape(patches.size, order='F')
+        print('verification key2: %.6f'%patches[200,20,50])
+        print('%s : %d (%dx%d) image patches'%(image_names[i], patches.shape[0], patches.shape[1], patches.shape[2]))
+        
+        n_patches = patches.shape[0]
+        patches_ = np.zeros((n_patches,1,TFEAT_PATCH_SIZE, TFEAT_PATCH_SIZE))
+        for i in range(n_patches):
+            patches_[i,0,:,:] = preprocess_patch(patches[i, :, :]) 
+        descriptors = extract_tfeats(model, patches_)
+        print(descriptors.shape)
+        with open(descriptor_paths[i], 'wb') as file:
+            np.asarray(descriptors.shape, dtype=np.int32).tofile(file)
+            descriptors.astype(np.float32).tofile(file)
+
 
 if __name__ == '__main__':
     main()

@@ -295,7 +295,7 @@ def train(train_loader, model, optimizer, epoch):
 
     pbar = tqdm(enumerate(train_loader))
     for batch_idx, (data_a, data_p, data_n) in pbar:
-
+    	print(data_a.shape)
         if args.cuda:
             data_a, data_p, data_n = data_a.cuda(), data_p.cuda(), data_n.cuda()
         data_a, data_p, data_n = Variable(data_a), Variable(data_p), \

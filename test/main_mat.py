@@ -21,10 +21,8 @@ from shutil import rmtree
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('patchesfile', type=str)
-    parser.add_argument('image_name', type=str)
-    parser.add_argument('output_path', type=str)
+    parser = argparse.ArgumentParser(description='tfeat calculate descriptors.')
+    parser.add_argument('data_folder', type=str)
     parser.add_argument('--checkpoint', type=str, default='./testmodel.pth')
     args = parser.parse_args()
     return args
@@ -60,6 +58,7 @@ MEAN = 0.48544601108437
 STD = 0.18649942105166
 
 
+
 def preprocess_patch(patch):
     out = cv2.resize(patch, (TFEAT_PATCH_SIZE, TFEAT_PATCH_SIZE)).astype(np.float32) / 255;
     out = (out - MEAN) / STD
@@ -82,34 +81,30 @@ def extract_tfeats(net,patches):
 def main():
     
     
-#     args = parse_args()
-#     resume = args.checkpoint
-    resume = 'testmodel.pth'
+    args = parse_args()
+    resume = args.checkpoint
+    
 #     print('patchesfile: %s'%args.patchesfile)
 #     print('image_name : %s'%args.image_name)
 #     print('output_path: %s'%args.output_path)
     print('checkpoint : %s'%resume)
     
-    data_folder = '/home/ruibinma/local-feature-evaluation/data'
+    data_folder = args.data_folder
     image_folder = os.path.join(data_folder, 'images')
     keypoints_folder = os.path.join(data_folder, 'keypoints')
-    sfm_folder = os.path.join(data_folder, 'sfm_results')
     descriptor_folder = os.path.join(data_folder, 'descriptors')
     database_path = os.path.join(data_folder, 'database.db')
     
-#     if os.path.exists(keypoints_folder):
-#         rmtree(keypoints_folder)
-#     os.mkdir(keypoints_folder)
-    
     if os.path.exists(descriptor_folder):
         rmtree(descriptor_folder)
-    os.mkdir(descriptor_folder)
+    os.mkdir(descriptor_folder)  
     
     image_names = os.listdir(image_folder)
     image_names.sort()
     keypoint_paths = []
     descriptor_paths = []
     image_paths = []
+    patches_path = os.path.join(data_folder, 'temp_patches.bin')
     n_images = len(image_names)
     for image_name in image_names:
         image_paths.append(os.path.join(image_folder, image_name))
@@ -128,28 +123,38 @@ def main():
         print('=> loading checkpoint {}'.format(resume))
         checkpoint = torch.load(resume)
         start_epoch = checkpoint['epoch']
-        checkpoint = torch.load(resume)
+        #checkpoint = torch.load(resume)
         model.load_state_dict(checkpoint['state_dict'])
     else:
         print('=> no checkpoint found at {}'.format(resume))
     model.eval()
     
     for i in range(n_images):
-        patches = eng.extract(image_paths[i], keypoint_paths[i], 32)
-        patches = np.array(patches._data).reshape(patches.size, order='F')
+        # pass patches to .bin then to python
+        eng.extract2(image_paths[i], keypoint_paths[i], patches_path, nargout=0)
+        with open(patches_path, 'rb') as f:
+            shape = np.fromfile(f, count=3, dtype=np.int32)
+            patches = np.fromfile(f, count=shape[0]*shape[1]*shape[2], dtype=np.float32).reshape(shape)
+        
+        # directly pass patches from matlab to python: this is much slower by test
+        #patches = eng.extract(image_paths[i], keypoint_paths[i], 32)
+        #patches = np.array(patches._data).reshape(patches.size, order='F')
         print('verification key2: %.6f'%patches[200,20,50])
         print('%s : %d (%dx%d) image patches'%(image_names[i], patches.shape[0], patches.shape[1], patches.shape[2]))
         
         n_patches = patches.shape[0]
         patches_ = np.zeros((n_patches,1,TFEAT_PATCH_SIZE, TFEAT_PATCH_SIZE))
-        for i in range(n_patches):
-            patches_[i,0,:,:] = preprocess_patch(patches[i, :, :]) 
+        for j in range(n_patches):
+            patches_[j,0,:,:] = preprocess_patch(patches[j, :, :]) 
         descriptors = extract_tfeats(model, patches_)
         print(descriptors.shape)
-        with open(descriptor_paths[i], 'wb') as file:
-            np.asarray(descriptors.shape, dtype=np.int32).tofile(file)
-            descriptors.astype(np.float32).tofile(file)
-
-
+        with open(descriptor_paths[i], 'wb') as f:
+            np.asarray(descriptors.shape, dtype=np.int32).tofile(f)
+            descriptors.astype(np.single).tofile(f)
+        
+    os.remove(patches_path)
+    
+    eng.match(data_folder, nargout=0)
+    
 if __name__ == '__main__':
     main()

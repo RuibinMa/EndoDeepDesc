@@ -56,7 +56,6 @@ record_file_name = os.path.join(output_folder, 'record.txt')
 n_existing_patches = 0
 n_existing_matches = 0
 n_existing_nonmatches = 0
-canonical_point3D_id = 0
 current_grid = 0
 current_row = 0
 current_col = 0
@@ -65,17 +64,18 @@ if os.path.exists(record_file_name):
     n_existing_patches = np.int(rfile.readline())
     n_existing_matches = np.int(rfile.readline())
     n_existing_nonmatches = np.int(rfile.readline())
-    canonical_point3D_id = np.int(rfile.readline())
     current_grid = np.int(rfile.readline())
     current_row = np.int(rfile.readline())
     current_col = np.int(rfile.readline())
-    assert(n_existing_patches <= (current_grid+1)* grid_sz * grid_sz)
-    assert(n_existing_patches >   current_grid   * grid_sz * grid_sz)
+    assert(n_existing_patches <= current_grid    * grid_sz * grid_sz)
+    assert(n_existing_patches > (current_grid-1) * grid_sz * grid_sz)
     rfile.close()
     
-if not os.path.exists(output_folder):
-    os.mkdir(output_folder)
-    
+
+if os.path.exists(output_folder):
+    rmtree(output_folder)
+os.mkdir(output_folder)
+
 from pycolmap.scene_manager import SceneManager
 loader = SceneManager(sfm_folder)
 loader.load_cameras()
@@ -103,17 +103,12 @@ K[1,2] = cy
 K[2,2] = 1
 
 #output grid settings
-grid_row = current_row
-grid_col = current_col
-grid_id = current_grid
-
-if os.path.exists(os.path.join(output_folder, 'patches%04d.bmp'%grid_id)):
-    grid = cv2.imread(os.path.join(output_folder, 'patches%04d.bmp'%grid_id), cv2.IMREAD_GRAYSCALE)
-else:
-    grid = np.zeros(shape=(grid_sz*input_sz, grid_sz*input_sz), dtype=np.uint8)
-    
+grid_row = 0
+grid_col = 0
+grid_id = 0
+grid = np.zeros(shape=(grid_sz*input_sz, grid_sz*input_sz), dtype=np.uint8)
 info_file = open(os.path.join(output_folder, 'info.txt'), 'w')
-#position_file = open(os.path.join(output_folder, 'position%04d.txt'%grid_id), 'w')
+position_file = open(os.path.join(output_folder, 'position%04d.txt'%grid_id), 'w')
 
 #
 
@@ -215,7 +210,7 @@ for point3D_id in loader.point3D_ids:
         point3D_id_image_id_to_patch_id[(point3D_id, image_id)] = count
         patch_id_to_point3D_id_image_id[count] = (point3D_id, image_id)
         # write metadata to text files
-        info_file.write('%d 0\n'%(point3D_id + canonical_point3D_id))
+        info_file.write('%d 0\n'%point3D_id)
         
         # cv2.circle(img, (int(round(x)), int(round(y))), 5, (255,0,0))
         #if count <= grid_sz * grid_sz:
@@ -226,18 +221,18 @@ for point3D_id in loader.point3D_ids:
         # record the 3D position to determine whether consider as non-match
         point3D_idx = loader.point3D_id_to_point3D_idx[point3D_id]
         point3D = loader.points3D[point3D_idx]
-        #position_file.write('(%d %d) %04d %05d %.2f %.2f %.2f\n'%(grid_row, grid_col, image_id, point3D_id, point3D[0], point3D[1], point3D[2]))
+        position_file.write('(%d %d) %04d %05d %.2f %.2f %.2f\n'%(grid_row, grid_col, image_id, point3D_id, point3D[0], point3D[1], point3D[2]))
         
         grid_col += 1
         # create a new grid if the previous one is full
         if grid_row == grid_sz - 1 and grid_col == grid_sz:
             cv2.imwrite(os.path.join(output_folder, 'patches%04d.bmp'%grid_id), grid)
             grid = np.zeros(shape=(grid_sz*input_sz, grid_sz*input_sz), dtype=np.uint8)
-            #position_file.close()
+            position_file.close()
             grid_row = 0
             grid_col = 0
             grid_id += 1
-            #position_file = open(os.path.join(output_folder, 'position%04d.txt'%(grid_id)), 'w')
+            position_file = open(os.path.join(output_folder, 'position%04d.txt'%(grid_id)), 'w')
         elif grid_col == grid_sz:
             assert(grid_row < grid_sz-1)
             grid_row += 1
@@ -250,7 +245,7 @@ for point3D_id in loader.point3D_ids:
 #         print(kp1)
 #         print(kp2)
 #         cv2.imwrite(os.path.join(output_folder, 'patches%04d.bmp'%grid_id), grid)
-#         #position_file.close()
+#         position_file.close()
     matches[point3D_id] = init_choice_set(image_point)
     print('initialized %d choices for matches'%len(matches[point3D_id])) 
     assert(len(matches[point3D_id]) == (len(image_point)*(len(image_point)-1))/2)
@@ -258,10 +253,10 @@ for point3D_id in loader.point3D_ids:
        
 if grid_row != 0 or grid_col != 0:
     cv2.imwrite(os.path.join(output_folder, 'patches%04d.bmp'%grid_id), grid)
-    #position_file.close()
-#else:
-    #position_file.close()
-    #os.remove(position_file)
+    position_file.close()
+else:
+    position_file.close()
+    os.remove(position_file)
             
 
 
@@ -318,7 +313,7 @@ def extract_patch_from_grid(patch_id):
     
 ############################## ESTABLISH MATCHES AND NON-MATCHES
 matches_file_name = os.path.join(output_folder, 'm50_000000_000000_0.txt')
-mfile = open(matches_file_name, 'a+')
+mfile = open(matches_file_name, 'w')
 # establish matches
 assert(len(matches) == len(loader.point3D_ids))
 matches_list = {}
@@ -348,13 +343,13 @@ while(n < min(max_n_try, possible_n_matches)):
     key = (patch_id1, patch_id2)
     matches_list[key] = (rand_point3D_id, rand_point3D_id)
     # visualize the matchings
-#     if len(matches_list) % 900 == 0:
-#         img = np.zeros(shape=(input_sz, input_sz*2), dtype=np.uint8)
-#         patch1 = extract_patch_from_grid(patch_id1)
-#         patch2 = extract_patch_from_grid(patch_id2)
-#         img[0:input_sz,0:input_sz] = patch1
-#         img[0:input_sz, input_sz:input_sz*2] = patch2        
-#         cv2.imwrite('match%04d.jpg'%len(matches_list), img)
+    if len(matches_list) % 900 == 0:
+        img = np.zeros(shape=(input_sz, input_sz*2), dtype=np.uint8)
+        patch1 = extract_patch_from_grid(patch_id1)
+        patch2 = extract_patch_from_grid(patch_id2)
+        img[0:input_sz,0:input_sz] = patch1
+        img[0:input_sz, input_sz:input_sz*2] = patch2        
+        cv2.imwrite('match%04d.jpg'%n, img)
 
 # establish non-matches
 from numpy.linalg import norm
@@ -362,7 +357,7 @@ xyz_std = np.std(loader.points3D, axis = 0)
 pos_std = norm(xyz_std)
 
 nonmatches_list = {}
-N_nonmatches = len(matches_list)
+N_nonmatches = 100000
 max_n_try = 500000
 import random
 n = 0
@@ -402,54 +397,26 @@ while(n < max_n_try):
     print('%d--%d non-match: (%d, %d)'%(n, len(nonmatches_list), patch_id1, patch_id2))
     
     # visualize the matchings
-#     if len(nonmatches_list) % 900 == 0:
-#         img = np.zeros(shape=(input_sz, input_sz*2), dtype=np.uint8)
-#         patch1 = extract_patch_from_grid(patch_id1)
-#         patch2 = extract_patch_from_grid(patch_id2)
-#         img[0:input_sz,0:input_sz] = patch1
-#         img[0:input_sz, input_sz:input_sz*2] = patch2        
-#         cv2.imwrite('nonmatch%04d.jpg'%len(nonmatches_list), img)    
+    if len(nonmatches_list) % 900 == 0:
+        img = np.zeros(shape=(input_sz, input_sz*2), dtype=np.uint8)
+        patch1 = extract_patch_from_grid(patch_id1)
+        patch2 = extract_patch_from_grid(patch_id2)
+        img[0:input_sz,0:input_sz] = patch1
+        img[0:input_sz, input_sz:input_sz*2] = patch2        
+        cv2.imwrite('nonmatch%04d.jpg'%len(nonmatches_list), img)    
     
 # write matches and non-matches
 all_pairs = RandomDict()
-n = 0
-for key, value in matches_list.iteritems():
-  
-    all_pairs[key] = value
-    
-#     patch_id1, patch_id2 = key
-#     point3D_id1, point3D_id2 = value   
-#     if n % 1000 == 0:
-#         img = np.zeros(shape=(input_sz, input_sz*2), dtype=np.uint8)
-#         patch1 = extract_patch_from_grid(patch_id1 + n_existing_patches)
-#         patch2 = extract_patch_from_grid(patch_id2 + n_existing_patches)
-#         img[0:input_sz,0:input_sz] = patch1
-#         img[0:input_sz, input_sz:input_sz*2] = patch2        
-#         cv2.imwrite('match%04d.jpg'%n, img)
-#     n += 1
 
-n = 0
-for key, value in nonmatches_list.iteritems():
-    
+for key, value in matches_list.iteritems():
     all_pairs[key] = value
-    
-#     patch_id1, patch_id2 = key
-#     point3D_id1, point3D_id2 = value 
-#     if n % 1000 == 0:
-#         img = np.zeros(shape=(input_sz, input_sz*2), dtype=np.uint8)
-#         patch1 = extract_patch_from_grid(patch_id1 + n_existing_patches)
-#         patch2 = extract_patch_from_grid(patch_id2 + n_existing_patches)
-#         img[0:input_sz,0:input_sz] = patch1
-#         img[0:input_sz, input_sz:input_sz*2] = patch2        
-#         cv2.imwrite('nonmatch%04d.jpg'%n, img)  
-#     n += 1
-            
+for key, value in nonmatches_list.iteritems():
+    all_pairs[key] = value
 while len(all_pairs) > 0:
     key, value = all_pairs.random_item()
     patch_id1, patch_id2 = key
     point3D_id1, point3D_id2 = value    
-    mfile.write('%d %d 0 %d %d 0 0\n'%(patch_id1 + n_existing_patches, point3D_id1 + canonical_point3D_id, 
-                                       patch_id2 + n_existing_patches, point3D_id2 + canonical_point3D_id))
+    mfile.write('%d %d 0 %d %d 0 0\n'%(patch_id1, point3D_id1, patch_id2, point3D_id2))
     all_pairs.pop(key)
 mfile.close()
     
@@ -470,8 +437,7 @@ rfile = open(record_file_name, 'w')
 rfile.write('%d\n'%(n_existing_patches + count))
 rfile.write('%d\n'%(n_existing_matches + len(matches_list)))
 rfile.write('%d\n'%(n_existing_nonmatches + len(nonmatches_list)))
-rfile.write('%d\n'%(canonical_point3D_id + np.max(loader.point3D_ids) + 1))
-rfile.write('%d\n'%(grid_id))
+rfile.write('%d\n'%(current_grid + grid_id))
 rfile.write('%d\n'%(grid_row))
 rfile.write('%d\n'%(grid_col))
 rfile.close()

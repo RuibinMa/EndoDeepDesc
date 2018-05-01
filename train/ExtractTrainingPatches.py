@@ -12,6 +12,8 @@ import sqlite3
 import cv2
 from shutil import rmtree
 from randomdict import RandomDict
+import argparse
+
 
 grid_sz = 16
 input_sz = 64
@@ -48,10 +50,18 @@ def extract_patch_sz(img, sz, xy):
     return res
 
 data_folder = '../data/sample'
-image_folder = os.path.join(data_folder, 'images')
-sfm_folder = os.path.join(data_folder, 'sfm_results')
-output_folder = os.path.join(data_folder, 'output')
-database_path = os.path.join(data_folder, 'database.db')
+parser = argparse.ArgumentParser(description='extract patches and establish matches and nonmatches')
+parser.add_argument('--image_folder', type=str, default=os.path.join(data_folder, 'images'))
+parser.add_argument('--database_path', type=str, default=os.path.join(data_folder, 'database.db'))
+parser.add_argument('--sfm_folder', type=str, default=os.path.join(data_folder, 'sfm_results'))
+parser.add_argument('--output_folder', type=str, default=os.path.join(data_folder, 'output'))
+args = parser.parse_args()
+
+image_folder = args.image_folder
+sfm_folder = args.sfm_folder
+output_folder = args.output_folder
+database_path = args.database_path
+
 record_file_name = os.path.join(output_folder, 'record.txt')
 n_existing_patches = 0
 n_existing_matches = 0
@@ -112,7 +122,7 @@ if os.path.exists(os.path.join(output_folder, 'patches%04d.bmp'%grid_id)):
 else:
     grid = np.zeros(shape=(grid_sz*input_sz, grid_sz*input_sz), dtype=np.uint8)
     
-info_file = open(os.path.join(output_folder, 'info.txt'), 'w')
+info_file = open(os.path.join(output_folder, 'info.txt'), 'a+')
 #position_file = open(os.path.join(output_folder, 'position%04d.txt'%grid_id), 'w')
 
 #

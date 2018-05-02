@@ -32,14 +32,15 @@ from tensorboard_logger import configure, log_value
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch TFeat Example')
 # Model options
-parser.add_argument('--dataroot', type=str, default='/home/ruibinma/UBC_Phototour_Dataset',
+parser.add_argument('--dataroot', type=str, default='/media/ruibinma/RUIBIN/trainset',
                     help='path to dataset')
 parser.add_argument('--log-dir', default='./logs',
                     help='folder to output model checkpoints')
 parser.add_argument('--imageSize', type=int, default=32,
                     help='the height / width of the input image to network')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
+parser.add_argument('--resume', type=str, metavar='PATH',
+                    help='path to latest checkpoint (default: none)',
+                    default='../test/testmodel_10epoch.pth')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--epochs', type=int, default=10, metavar='E',
@@ -247,7 +248,7 @@ train_loader = torch.utils.data.DataLoader(
     batch_size=args.batch_size, shuffle=True, **kwargs)
 
 test_loader = torch.utils.data.DataLoader(
-    TripletPhotoTour(train=False, root=args.dataroot, name='liberty',
+    TripletPhotoTour(train=False, root=args.dataroot, name='notredame',#'liberty',
                      download=True, transform=transforms.Compose([
                         transforms.Lambda(cv2_scale),
                         transforms.Lambda(np_reshape),

@@ -51,12 +51,14 @@ def extract_patch_sz(img, sz, xy):
 
 data_folder = '../data/sample'
 parser = argparse.ArgumentParser(description='extract patches and establish matches and nonmatches')
+parser.add_argument('--N', type=int, default=100000)
 parser.add_argument('--image_folder', type=str, default=os.path.join(data_folder, 'images'))
 parser.add_argument('--database_path', type=str, default=os.path.join(data_folder, 'database.db'))
 parser.add_argument('--sfm_folder', type=str, default=os.path.join(data_folder, 'sfm_results'))
 parser.add_argument('--output_folder', type=str, default=os.path.join(data_folder, 'output'))
 args = parser.parse_args()
 
+N_matches = args.N
 image_folder = args.image_folder
 sfm_folder = args.sfm_folder
 output_folder = args.output_folder
@@ -148,6 +150,7 @@ track_len = 0
 
 point3D_id_image_id_to_patch_id = {}
 patch_id_to_point3D_id_image_id = {}
+invalid_points3D_id = set()
 
 for point3D_id in loader.point3D_ids:
     image_point = loader.point3D_id_to_images[point3D_id]
@@ -201,6 +204,12 @@ for point3D_id in loader.point3D_ids:
         print('point2D detected: %.4f, %.4f '%(kp[0], kp[1]))
         print('        after BA: %.4f, %.4f '%(point2D1_proj[0], point2D1_proj[1]))
         print('z-value(depth)  : %.4f'%point3D_cam[2])
+        
+    z_min = np.min(z_values)
+    if z_min < 0.01: # unstable, not use this point3D
+        invalid_points3D_id.add(point3D_id)
+        continue
+        
     
     z_max = np.max(z_values)
     print('largest distance: %.4f (extract 64x64 patch under this scale)'%z_max)
@@ -330,9 +339,8 @@ def extract_patch_from_grid(patch_id):
 matches_file_name = os.path.join(output_folder, 'm50_000000_000000_0.txt')
 mfile = open(matches_file_name, 'a+')
 # establish matches
-assert(len(matches) == len(loader.point3D_ids))
+assert(len(matches) + len(invalid_points3D_id) == len(loader.point3D_ids))
 matches_list = {}
-N_matches = 100000
 max_n_try = 500000
 n = 0
 
@@ -342,6 +350,7 @@ while(n < min(max_n_try, possible_n_matches)):
         break
     
     rand_point3D_id, rand_pair_choices = matches.random_item()
+    assert(rand_point3D_id not in invalid_points3D_id)
     assert(len(rand_pair_choices) > 0)
     rand_pair_key, rand_pair = rand_pair_choices.random_item()
     rand_pair_choices.pop(rand_pair_key)
@@ -386,6 +395,8 @@ while(n < max_n_try):
         continue
     rand_point3D_id1 = loader.point3D_ids[rand_point3D_idx1]
     rand_point3D_id2 = loader.point3D_ids[rand_point3D_idx2]
+    if rand_point3D_id1 in invalid_points3D_id or rand_point3D_id2 in invalid_points3D_id:
+        continue
     image_point1 = loader.point3D_id_to_images[rand_point3D_id1]
     image_point2 = loader.point3D_id_to_images[rand_point3D_id2]
     rand_image_idx1 = random.randint(0, len(image_point1)-1)

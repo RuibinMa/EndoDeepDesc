@@ -140,7 +140,19 @@ class TripletPhotoTour(dset.PhotoTour):
         self.n_triplets = args.n_triplets
 
         if self.train:
-            print('Generating {} triplets'.format(self.n_triplets))   
+            print('Generating {} triplets'.format(self.n_triplets))
+#             inds = {}
+#             for idx, ind in enumerate(self.labels):
+#                 ind = np.int64(ind)
+#                 if ind not in inds:
+#                     inds[ind] = []
+#                 inds[ind].append(idx)
+#                 if ind >= 371500 and ind <= 371520:
+#                     print(ind.dtype)
+#                     print(inds[ind])
+#                 
+#             print(371511 in inds)
+#             print(inds[371511])
             self.triplets = self.generate_triplets(self.labels, self.n_triplets)
 
     @staticmethod
@@ -148,6 +160,7 @@ class TripletPhotoTour(dset.PhotoTour):
         def create_indices(_labels):
             inds = dict()
             for idx, ind in enumerate(_labels):
+                ind = np.int64(ind)
                 if ind not in inds:
                     inds[ind] = []
                 inds[ind].append(idx)
@@ -166,6 +179,7 @@ class TripletPhotoTour(dset.PhotoTour):
             
             c1 = unique_labels[c1]
             c2 = unique_labels[c2]
+            
             assert(len(indices[c1]) >= 2)
             assert(len(indices[c2]) >= 2)
             
@@ -244,7 +258,7 @@ np_reshape = lambda x: np.reshape(x, (32, 32, 1))
 
 kwargs = {'num_workers': 2, 'pin_memory': True} if args.cuda else {}
 train_loader = torch.utils.data.DataLoader(
-    TripletPhotoTour(train=True, root=args.dataroot, name='notredame',
+    TripletPhotoTour(train=True, root=args.dataroot, name='colon',
                      download=True, transform=transforms.Compose([
                         transforms.Lambda(cv2_scale),
                         transforms.Lambda(np_reshape),
@@ -254,7 +268,7 @@ train_loader = torch.utils.data.DataLoader(
     batch_size=args.batch_size, shuffle=True, **kwargs)
 
 test_loader = torch.utils.data.DataLoader(
-    TripletPhotoTour(train=False, root=args.dataroot, name='notredame',#'liberty',
+    TripletPhotoTour(train=False, root=args.dataroot, name='colon',#'liberty',
                      download=True, transform=transforms.Compose([
                         transforms.Lambda(cv2_scale),
                         transforms.Lambda(np_reshape),
@@ -302,7 +316,7 @@ def train(train_loader, model, optimizer, epoch):
 
     pbar = tqdm(enumerate(train_loader))
     for batch_idx, (data_a, data_p, data_n) in pbar:
-    	print(data_a.shape)
+    	#print(data_a.shape)
         if args.cuda:
             data_a, data_p, data_n = data_a.cuda(), data_p.cuda(), data_n.cuda()
         data_a, data_p, data_n = Variable(data_a), Variable(data_p), \

@@ -140,7 +140,7 @@ class TripletPhotoTour(dset.PhotoTour):
         self.n_triplets = args.n_triplets
 
         if self.train:
-            print('Generating {} triplets'.format(self.n_triplets))
+            print('Generating {} triplets'.format(self.n_triplets))   
             self.triplets = self.generate_triplets(self.labels, self.n_triplets)
 
     @staticmethod
@@ -163,6 +163,12 @@ class TripletPhotoTour(dset.PhotoTour):
             c2 = np.random.randint(0, n_classes-1)
             while c1 == c2:
                 c2 = np.random.randint(0, n_classes-1)
+            
+            c1 = unique_labels[c1]
+            c2 = unique_labels[c2]
+            assert(len(indices[c1]) >= 2)
+            assert(len(indices[c2]) >= 2)
+            
             if len(indices[c1]) == 2:  # hack to speed up process
                 n1, n2 = 0, 1
             else:
